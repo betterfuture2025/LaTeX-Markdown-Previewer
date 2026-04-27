@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LaTeX & Markdown Live Previewer</title>
+    
+    <!-- KaTeX CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    
+    <!-- JS Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        body { background-color: #f8fafc; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+        #preview-container :first-child { margin-top: 0; }
+        .katex-display { margin: 1em 0; overflow-x: auto; overflow-y: hidden; }
+        
+        /* Markdown Typography */
+        #preview-container .prose { color: #1e293b; max-width: none; }
+        #preview-container h1 { font-size: 1.4rem !important; font-weight: 700; margin-bottom: 0.75rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.25rem; }
+        #preview-container h2 { font-size: 1.2rem !important; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; }
+        #preview-container p { margin-bottom: 0.75rem; line-height: 1.7; white-space: pre-wrap; font-size: 0.95rem; }
+        #preview-container ul, #preview-container ol { margin-bottom: 0.75rem; padding-left: 1.25rem; }
+        #preview-container li { margin-bottom: 0.25rem; font-size: 0.95rem; }
+        #preview-container li p { margin-bottom: 0 !important; display: inline; }
+        
+        /* UI Components */
+        .switch { position: relative; display: inline-block; width: 44px; height: 22px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #475569; transition: .3s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+        input:checked + .slider { background-color: #10b981; }
+        input:checked + .slider:before { transform: translateX(22px); }
+
+        @keyframes pulse-submit {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.4); }
+            50% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(79, 70, 229, 0); }
+        }
+        .btn-ready { animation: pulse-submit 1.5s infinite; background-color: #4f46e5 !important; }
+
+        /* Smooth fade for processing overlay */
+        #loading-overlay { backdrop-filter: blur(4px); transition: all 0.3s ease; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden text-slate-900">
+
+    <!-- Header -->
+    <header class="bg-indigo-700 text-white p-3 shadow-lg flex justify-between items-center z-20">
+        <div class="flex items-center space-x-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-indigo-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1.01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h1 class="text-lg font-bold tracking-tight">LaTeX Previewer</h1>
+        </div>
+        
+        <div class="flex items-center space-x-2 sm:space-x-3">
+            <!-- API Status Indicator -->
+            <div id="api-status-badge" class="flex items-center space-x-1.5 bg-slate-900/40 px-3 py-1.5 rounded-lg border border-white/10 transition-all cursor-pointer hover:bg-slate-900/60" onclick="document.getElementById('key-modal').classList.remove('hidden')">
+                <div id="api-status-dot" class="h-2 w-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>
+                <span id="api-status-text" class="text-[10px] font-black uppercase tracking-widest text-red-200">API: Missing</span>
+            </div>
+
+            <div class="flex items-center space-x-2 bg-indigo-800 px-3 py-1.5 rounded-full border border-indigo-500">
+                <span id="smart-fix-label" class="text-[10px] font-black uppercase tracking-widest text-indigo-200">Fix: OFF</span>
+                <label class="switch">
+                    <input type="checkbox" id="smart-fix-toggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            
+            <div class="flex space-x-1 sm:space-x-2">
+                <button id="submit-btn" class="bg-indigo-600 hover:bg-indigo-500 px-4 sm:px-6 py-1.5 rounded-md text-sm font-bold transition-all border border-indigo-400 shadow-md flex items-center space-x-2">
+                    <span id="submit-text">SUBMIT</span>
+                </button>
+                <input type="file" id="file-input" class="hidden" accept="image/*">
+                <button id="upload-btn" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded-md text-sm font-medium border border-indigo-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                </button>
+                <button id="clear-btn" class="bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded-md text-sm font-bold border border-slate-500">CLEAR</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden relative">
+        <!-- Editor -->
+        <div id="editor-container" class="w-1/2 flex flex-col border-r border-gray-200 bg-white">
+            <div class="bg-gray-50 px-4 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b flex justify-between">
+                <span>INPUT AREA (Raw Content)</span>
+                <span id="hint-text" class="italic normal-case text-indigo-500 font-semibold">Real-time preview active</span>
+            </div>
+            <div class="flex-1 flex flex-col relative">
+                <textarea id="editor" class="flex-1 p-6 font-mono text-sm resize-none focus:outline-none leading-relaxed text-slate-800" placeholder="Type here or paste image. Then click SUBMIT."></textarea>
+                
+                <!-- Staged Image Box -->
+                <div id="img-preview-box" class="hidden absolute bottom-6 left-6 max-w-[240px] bg-white p-3 rounded-2xl shadow-2xl border-2 border-indigo-500 z-10 animate-in fade-in zoom-in duration-300">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-[10px] font-black text-indigo-600 uppercase tracking-wider flex items-center">
+                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"/></svg>
+                            Image Attached
+                        </span>
+                        <button id="close-img-preview" class="text-gray-300 hover:text-red-500 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                    <img id="last-img-preview" class="rounded-xl border border-gray-100 max-h-[140px] object-contain w-full shadow-inner" src="" alt="preview">
+                    <div class="mt-3 text-center">
+                        <p class="text-[10px] font-black text-indigo-700 animate-pulse uppercase">Click SUBMIT to run AI</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Preview -->
+        <div class="w-1/2 flex flex-col bg-white">
+            <div class="bg-gray-50 px-4 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b flex justify-between items-center">
+                <span>RENDERED OUTPUT (Preview)</span>
+                <div class="flex items-center space-x-1.5">
+                    <span id="status-dot" class="h-2 w-2 rounded-full bg-green-500"></span>
+                    <span id="status" class="text-green-600 font-bold text-[10px]">READY</span>
+                </div>
+            </div>
+            <div id="preview-container" class="flex-1 p-8 overflow-y-auto bg-white">
+                <div id="preview" class="prose prose-slate"></div>
+            </div>
+        </div>
+
+        <!-- Global Loader Overlay -->
+        <div id="loading-overlay" class="hidden absolute inset-0 bg-white/90 backdrop-blur-md flex flex-col items-center justify-center z-50">
+            <div class="relative w-20 h-20">
+                <div class="absolute inset-0 rounded-full border-4 border-indigo-100"></div>
+                <div class="absolute inset-0 rounded-full border-4 border-t-indigo-600 animate-spin"></div>
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <svg class="w-8 h-8 text-indigo-600 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                </div>
+            </div>
+            <p class="mt-8 text-indigo-900 font-black tracking-tight text-xl">AI is reading the image...</p>
+            <p class="text-slate-400 text-sm mt-2">Transcribing text and math formulas</p>
+        </div>
+    </main>
+
+    <!-- Key Settings Modal -->
+    <div id="key-modal" class="hidden fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 transition-all">
+            <h3 class="text-xl font-black mb-2 text-slate-800">Gemini API Configuration</h3>
+            <p class="text-sm text-slate-500 mb-6 leading-relaxed">Enter your API Key to enable OCR feature. Keys are stored locally in your browser.</p>
+            <input type="password" id="api-key-input" class="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl mb-6 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition-all font-mono" placeholder="AIzaSy...">
+            <div class="flex justify-end space-x-3">
+                <button id="close-modal-btn" class="px-5 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors" onclick="document.getElementById('key-modal').classList.add('hidden')">Cancel</button>
+                <button id="save-key-btn" class="px-7 py-3 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 shadow-xl shadow-indigo-200 transition-all">Save Key</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const apiKey = ""; // System injected key
+        let userApiKey = localStorage.getItem('gemini_api_key') || "";
+        let stagedImageData = null;
+        let stagedMimeType = null;
+        let isProcessing = false;
+
+        window.onload = function() {
+            const editor = document.getElementById('editor');
+            const preview = document.getElementById('preview');
+            const smartFixToggle = document.getElementById('smart-fix-toggle');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const imgPreviewBox = document.getElementById('img-preview-box');
+            const lastImgPreview = document.getElementById('last-img-preview');
+            const submitBtn = document.getElementById('submit-btn');
+            const submitText = document.getElementById('submit-text');
+            const apiStatusDot = document.getElementById('api-status-dot');
+            const apiStatusText = document.getElementById('api-status-text');
+
+            function updateAPIStatusUI() {
+                const activeKey = apiKey || userApiKey;
+                if (activeKey && activeKey.trim().length > 0) {
+                    apiStatusDot.className = "h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]";
+                    apiStatusText.innerText = "API: Active";
+                    apiStatusText.className = "text-[10px] font-black uppercase tracking-widest text-emerald-400";
+                } else {
+                    apiStatusDot.className = "h-2 w-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]";
+                    apiStatusText.innerText = "API: Missing";
+                    apiStatusText.className = "text-[10px] font-black uppercase tracking-widest text-red-400";
+                }
+            }
+
+            async function callGeminiOCR(base64Data, mimeType) {
+                const activeKey = apiKey || userApiKey;
+                if (!activeKey) {
+                    alert("API Key is missing. Please set it first.");
+                    document.getElementById('key-modal').classList.remove('hidden');
+                    return;
+                }
+
+                isProcessing = true;
+                loadingOverlay.classList.remove('hidden');
+                submitText.innerText = "READING...";
+
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${activeKey}`;
+                const payload = {
+                    contents: [{
+                        role: "user",
+                        parts: [
+                            { text: "Transcribe the image. Extract text and math. Use Markdown and LaTeX. Important: Convert symbols like \#frac to \\frac and ensure math is wrapped in ( ) or $ $. Format option lists (A, B, C...) clearly. Output only the transcribed content." },
+                            { inlineData: { mimeType, data: base64Data } }
+                        ]
+                    }]
+                };
+
+                let delay = 1000;
+                for (let attempt = 0; attempt <= 5; attempt++) {
+                    try {
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        const data = await response.json();
+                        const result = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (result) {
+                            // Insert at cursor
+                            const pos = editor.selectionStart;
+                            const current = editor.value;
+                            editor.value = current.substring(0, pos) + "\n" + result.trim() + "\n" + current.substring(pos);
+                            
+                            // Success Cleanup
+                            stagedImageData = null;
+                            imgPreviewBox.classList.add('hidden');
+                            submitBtn.classList.remove('btn-ready');
+                            updatePreview();
+                            break;
+                        }
+                    } catch (error) {
+                        if (attempt === 5) alert("OCR Error: " + error.message);
+                        else { await new Promise(r => setTimeout(r, delay)); delay *= 2; }
+                    }
+                }
+                isProcessing = false;
+                loadingOverlay.classList.add('hidden');
+                submitText.innerText = "SUBMIT";
+            }
+
+            function stageFile(file) {
+                if (!file || !file.type.startsWith('image/')) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    stagedImageData = e.target.result.split(',')[1];
+                    stagedMimeType = file.type;
+                    lastImgPreview.src = e.target.result;
+                    imgPreviewBox.classList.remove('hidden');
+                    submitBtn.classList.add('btn-ready');
+                };
+                reader.readAsDataURL(file);
+            }
+
+            function applySmartFix(text) {
+                if (!smartFixToggle.checked) return text;
+                // Core fix for #frac or \#frac often found in OCR outputs
+                let r = text.replace(/\\\\/g, '\\').replace(/(?<!^)\\?#frac/g, '\\frac');
+                r = r.replace(/\\#/g, '#');
+                
+                const cmds = ['frac', 'sqrt', 'times', 'div', 'pm', 'Rightarrow', 'sum'];
+                cmds.forEach(c => {
+                    const reg = new RegExp('(?<![\\$\\(\\[])\\\\' + c + '({[^{}]*})?({[^{}]*})?(?![\\$\\)\\]])', 'g');
+                    r = r.replace(reg, m => '$' + m + '$');
+                });
+                r = r.replace(/^(\d+)\s*\n\s*(\d+)$/gm, '$\\frac{$1}{$2}$');
+                r = r.replace(/^(?!\s*-\s+)([A-E]\.)/gm, '- $1');
+                r = r.replace(/\$\s*\(([^)]+)\)\s*\$/g, '($1)');
+                return r;
+            }
+
+            function updatePreview() {
+                const processed = applySmartFix(editor.value);
+                preview.innerHTML = marked.parse(processed);
+                try {
+                    renderMathInElement(preview, {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false},
+                            {left: '\\(', right: '\\)', display: false}, {left: '\\[', right: '\\]', display: true},
+                            {left: '(', right: ')', display: false}
+                        ],
+                        throwOnError: false
+                    });
+                    document.getElementById('status-dot').className = "h-2 w-2 rounded-full bg-green-500";
+                    document.getElementById('status').innerText = "READY";
+                } catch (e) {
+                    document.getElementById('status-dot').className = "h-2 w-2 rounded-full bg-red-500";
+                    document.getElementById('status').innerText = "ERROR";
+                }
+            }
+
+            // Event Listeners
+            editor.addEventListener('input', updatePreview);
+            smartFixToggle.addEventListener('change', () => {
+                document.getElementById('smart-fix-label').innerText = `Fix: ${smartFixToggle.checked?'ON':'OFF'}`;
+                updatePreview();
+            });
+
+            submitBtn.onclick = () => {
+                if (isProcessing) return;
+                if (stagedImageData) callGeminiOCR(stagedImageData, stagedMimeType);
+                else updatePreview();
+            };
+
+            document.getElementById('upload-btn').onclick = () => document.getElementById('file-input').click();
+            document.getElementById('file-input').onchange = (e) => stageFile(e.target.files[0]);
+
+            editor.addEventListener('paste', (e) => {
+                const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) { e.preventDefault(); stageFile(items[i].getAsFile()); break; }
+                }
+            });
+
+            document.getElementById('clear-btn').onclick = () => {
+                editor.value = ''; stagedImageData = null;
+                imgPreviewBox.classList.add('hidden'); submitBtn.classList.remove('btn-ready');
+                updatePreview();
+            };
+
+            document.getElementById('close-img-preview').onclick = () => { stagedImageData = null; imgPreviewBox.classList.add('hidden'); submitBtn.classList.remove('btn-ready'); };
+            document.getElementById('save-key-btn').onclick = () => {
+                userApiKey = document.getElementById('api-key-input').value.trim();
+                localStorage.setItem('gemini_api_key', userApiKey);
+                document.getElementById('key-modal').classList.add('hidden');
+                updateAPIStatusUI();
+            };
+
+            updateAPIStatusUI();
+            document.getElementById('api-key-input').value = userApiKey;
+            updatePreview();
+        };
+    </script>
+</body>
+</html>
